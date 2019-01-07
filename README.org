@@ -1,0 +1,74 @@
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="http://www.pirilampo.org/styles/readtheorg/css/htmlize.css"/>
+#+HTML_HEAD: <link rel="stylesheet" type="text/css" href="http://www.pirilampo.org/styles/readtheorg/css/readtheorg.css"/>
+
+#+HTML_HEAD: <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.1.3/jquery.min.js"></script>
+#+HTML_HEAD: <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.4/js/bootstrap.min.js"></script>
+#+HTML_HEAD: <script type="text/javascript" src="http://www.pirilampo.org/styles/lib/js/jquery.stickytableheaders.js"></script>
+#+HTML_HEAD: <script type="text/javascript" src="http://www.pirilampo.org/styles/readtheorg/js/readtheorg.js"></script>
+#+HTML_HEAD: <style type="text/css">.abstract {max-width: 30em; margin-left: auto; margin-right: auto;}</style>
+
+#+title: =sml-bfgs=: SML library for non-linear optimisation using the BFGS optimiser
+#+author: Mark Clements
+
+#+OPTIONS: H:3 num:nil
+
+* Outline
+
+This provides a hand-crafted translation of the =vmmin= function from =R= into =SML= code.
+
+I have also provided a standalone version of the =C= code for debugging purposes.
+
+* Signature
+
+#+BEGIN_SRC sml
+  type vmminT = {fail: bool, fmin: real, fncount: int, grcount: int, b: real array}
+  (* vmmin(init, fminfn, fmingr, maxit, trace, abstol, reltol) *)
+  val vmmin : real array * (real array -> real) * (real array -> real array) * int * bool * real * real  -> vmminT
+  (* vmmin_default(init, fminfn, fmingr) *)
+  val vmmin_default : real array * (real array -> real) * (real array -> real array) -> vmminT
+  (* Rosenbrock objective function *)
+  val rosenbrock : real array -> real
+  (* Rosenbrock gradient *)
+  val rosenbrock1 : real array -> real array
+#+END_SRC
+
+
+* Test example
+#+BEGIN_SRC emacs-lisp :results silent :exports none
+(org-babel-do-load-languages
+ 'org-babel-load-languages
+ '((sml . t)
+   (sh . t)
+   (R . t)
+   (emacs-lisp . t)))
+#+END_SRC
+
+Tests are provided to optimise the standard Rosenbrock function using both =SML/NJ= and =C=:
+
+#+BEGIN_SRC sh :results verbatim :exports both
+make test-smlnj
+#+END_SRC
+
+#+RESULTS:
+: sml @SMLquiet -m test-smlnj.cm
+: Standard ML of New Jersey v110.84 [built: Sun Dec 16 21:03:38 2018]
+: [scanning test-smlnj.cm]
+: [library $SMLNJ-BASIS/basis.cm is stable]
+: [library $SMLNJ-BASIS/(basis.cm):basis-common.cm is stable]
+: [loading (test-smlnj.cm):./bfgs.sml]
+: [loading (test-smlnj.cm):./test.sml]
+: Rosenbrock test expects (1,1):
+: Array.fromList [0.999999997717,0.999999997717]
+
+
+#+BEGIN_SRC sh :results verbatim :exports both
+make c
+#+END_SRC
+
+#+RESULTS:
+: gcc `pkg-config --cflags libRmath` vmmin.c -lRmath
+: ./a.out
+: Rosenbrock test:
+: f = 0.000000000000000
+: x = 0.999999997717057
+: y = 0.999999994709677
