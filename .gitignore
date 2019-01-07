@@ -1,3 +1,4 @@
+*~
 *.annot
 *.cmo
 *.cma
@@ -21,3 +22,9 @@ setup.log
 
 # Merlin configuring file for Vim and Emacs
 .merlin
+
+# C temporary files
+a.out
+
+#
+.cm/
