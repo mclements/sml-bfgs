@@ -21,6 +21,7 @@ I have also provided a standalone version of the =C= code for debugging purposes
 * Signature
 
 #+BEGIN_SRC sml
+  (* structure for output from vmmin and vmmin_default *)
   type vmminT = {fail: bool, fmin: real, fncount: int, grcount: int, b: real array}
   (* vmmin(init, fminfn, fmingr, maxit, trace, abstol, reltol) *)
   val vmmin : real array * (real array -> real) * (real array -> real array) * int * bool * real * real  -> vmminT
