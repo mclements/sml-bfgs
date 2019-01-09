@@ -31,6 +31,11 @@ I have also provided a standalone version of the =C= code for debugging purposes
   val rosenbrock : real array -> real
   (* Rosenbrock gradient *)
   val rosenbrock1 : real array -> real array
+  (* finite differences *) 
+  (* fdgradient f eps beta *)
+  val fdgradient : (real array -> real) -> real -> real array -> real array
+  (* fdhessian grad eps beta *)
+  val fdhessian : (real array -> real array) -> real -> real array -> real Array2.array
 #+END_SRC
 
 
@@ -124,47 +129,23 @@ We could also have used finite differences for the gradient and the hessian:
   (* finite differences *)
   local
       open Array
+      open Bfgs
   in
-  fun fdgradient f eps x =
-      let
-	  val n = length x
-	  fun delta(x, i, eps) = tabulate(n, fn j => sub(x,j) + (if i=j then eps else 0.0))
-      in
-	  tabulate(n, fn i => (f(delta(x,i,eps)) - f(delta(x,i,~eps))) / 2.0 / eps)
-      end
-  fun fdhessian grad eps beta =
-      let
-	  val n = length beta
-	  fun delta(beta, i, eps) = tabulate(n, fn (j) => sub(beta,j) + (if i=j then eps else 0.0))
-	  val lol = List.tabulate(n, fn i =>
-					let val upper = grad(delta(beta,i,eps))
-					    val lower = grad(delta(beta,i,~eps))
-					in
-					    List.tabulate(n, fn i => (sub(upper,i)-sub(lower,i))/2.0/eps)
-					end)
-      in
-	  Array2.fromList lol
-      end
-  end
   fun deriv x y = fdgradient (negll x y) 1.0e~5
-  val fit = Bfgs.vmmin_default(Array.fromList [0.0,0.0], negll x y, deriv x y)
+  val fit = vmmin_default(Array.fromList [0.0,0.0], negll x y, deriv x y)
   val hessian = fdhessian (deriv x y) 1.0e~5 (#b(fit))
+  end
 #+END_SRC
 
 #+RESULTS:
-#+begin_example
-# # # # # # # # # # # # # # # # # # # # # # # # # # # val deriv = fn: real array -> real array -> real array -> real array
-val fdgradient = fn: (real array -> real) -> real -> real array -> real array
-val fdhessian = fn:
-   (real array -> real array) -> real -> real array -> real Array2.array
-val fit =
-   {b = fromList[4.605169683, 0.4054642382], fail = false, fmin =
-    6.647168692, fncount = 48, grcount = 15}: Bfgs.vmminT
-val hessian =
-   fromList[[249.9990615, 149.9995506], [149.9995506, 149.9992663]]:
-   real Array2.array
-val it = "stdIn": string
-#+end_example
+: # # # # # # # # val deriv = fn: real array -> real array -> real array -> real array
+: val fit =
+:    {b = fromList[4.605169683, 0.4054642382], fail = false, fmin =
+:     6.647168692, fncount = 48, grcount = 15}: Bfgs.vmminT
+: val hessian =
+:    fromList[[249.9990615, 149.9995506], [149.9995506, 149.9992663]]:
+:    real Array2.array
+: val it = "stdIn": string
 
 We can invert the hessian to get the variance-covariance matrix and the standard errors for the coefficients:
 
@@ -233,7 +214,7 @@ val fit = Bfgs.vmmin_default(Array.fromList [~1.0, 1.0], Bfgs.rosenbrock, Bfgs.r
 :     5.769266837E~17, fncount = 117, grcount = 51}: Bfgs.vmminT
 : val it = "stdIn": string
 
-The =Makefile= also provides to optimise the standard Rosenbrock function using =C=:
+The =Makefile= also provides a test to optimise the Rosenbrock function using =C=:
 
 #+BEGIN_SRC sh :results verbatim :exports both
 make c

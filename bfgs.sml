@@ -4,6 +4,8 @@ structure Bfgs : sig
 	      val vmmin_default : real array * (real array -> real) * (real array -> real array) -> vmminT
 	      val rosenbrock : real array -> real
 	      val rosenbrock1 : real array -> real array
+	      val fdgradient : (real array -> real) -> real -> real array -> real array
+	      val fdhessian : (real array -> real array) -> real -> real array -> real Array2.array
 	  end = struct
 
 structure Arr = struct
@@ -223,6 +225,29 @@ and rosenbrock1 par =
 		       2.0*b*y-2.0*b*x*x]
     end
 end
+
+(* finite differences *)
+fun fdgradient f eps x =
+    let
+	val n = Array.length x
+	fun delta(x, i, eps) = Array.tabulate(n, fn j => Array.sub(x,j) + (if i=j then eps else 0.0))
+    in
+	Array.tabulate(n, fn i => (f(delta(x,i,eps)) - f(delta(x,i,~eps))) / 2.0 / eps)
+    end
+
+fun fdhessian grad eps beta =
+    let
+	val n = Array.length beta
+	fun delta(x, i, eps) = Array.tabulate(n, fn (j) => Array.sub(x,j) + (if i=j then eps else 0.0))
+	val lol = List.tabulate(n, fn i =>
+				      let val upper = grad(delta(beta,i,eps))
+					  val lower = grad(delta(beta,i,~eps))
+				      in
+					  List.tabulate(n, fn i => (Array.sub(upper,i)-Array.sub(lower,i))/2.0/eps)
+				      end)
+    in
+	Array2.fromList lol
+    end
 
 end (* struct *)
 
