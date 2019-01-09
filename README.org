@@ -14,7 +14,7 @@
 
 * Outline
 
-This provides a hand-crafted translation of the =vmmin= function from =R= into =SML= code.
+This provides a hand-crafted translation of the =vmmin= function from =optim.c= in =R= into =SML= code.
 
 I have also provided a standalone version of the =C= code for debugging purposes.
 
@@ -34,40 +34,213 @@ I have also provided a standalone version of the =C= code for debugging purposes
 #+END_SRC
 
 
-* Test example
+* Test examples
 #+BEGIN_SRC emacs-lisp :results silent :exports none
-(org-babel-do-load-languages
- 'org-babel-load-languages
- '((sml . t)
-   (sh . t)
-   (R . t)
-   (emacs-lisp . t)))
+  (org-babel-do-load-languages
+   'org-babel-load-languages
+   '((sml . t)
+     (sh . t)
+     (R . t)
+     (emacs-lisp . t)))
+  (if (not (get-buffer "*sml*"))
+      (progn
+	(run-sml "polyml" "")
+	(with-current-buffer (get-buffer "*polyml*") 
+	  (rename-buffer "*sml*"))
+	))
 #+END_SRC
 
-Tests are provided to optimise the standard Rosenbrock function using both =SML/NJ= and =C=:
+As a trivial first example, we could optimise a quadratic equation. Note, however, that unconstrained univariate optimisation is better done using Brent's method.
 
-#+BEGIN_SRC sh :results verbatim :exports both
-make test-smlnj
+#+BEGIN_SRC sml :exports both :results verbatim
+  use "bfgs.sml";
+  fun vmmin_default_uni(par,f,gr) =
+      Bfgs.vmmin_default(Array.fromList [par],
+			 fn x => f(Array.sub(x,0)),
+			 fn x => Array.fromList [gr(Array.sub(x,0))])
+  fun f beta = Math.pow(beta-1.0,2.0)
+  fun deriv beta = 2.0*(beta-1.0)
+  val fit = vmmin_default_uni(0.0, f, deriv)
 #+END_SRC
 
 #+RESULTS:
-: sml @SMLquiet -m test-smlnj.cm
-: Standard ML of New Jersey v110.84 [built: Sun Dec 16 21:03:38 2018]
-: [scanning test-smlnj.cm]
-: [library $SMLNJ-BASIS/basis.cm is stable]
-: [library $SMLNJ-BASIS/(basis.cm):basis-common.cm is stable]
-: [loading (test-smlnj.cm):./bfgs.sml]
-: [loading (test-smlnj.cm):./test.sml]
-: Rosenbrock test expects (1,1):
-: Array.fromList [0.999999997717,0.999999997717]
+: # # # # # # # val deriv = fn: real -> real
+: val f = fn: real -> real
+: val fit =
+:    {b = fromList[1.0], fail = false, fmin = 0.0, fncount = 4, grcount = 3}:
+:    Bfgs.vmminT
+: val vmmin_default_uni = fn:
+:    real * (real -> real) * (real -> real) -> Bfgs.vmminT
+: val it = "stdIn": string
 
+
+
+We present an example using Poisson regression with an analytical gradient:
+
+#+BEGIN_SRC sml :exports both :results verbatim
+    local
+	open Math
+	open Array
+    in
+    fun ln_factorial n =
+	let fun loop(i,x) = if i>n then x else loop(i+1,ln(real(i))+x)
+	in loop(1,0.0) end
+    fun sumi f = foldli (fn (i,a,x) => f(i,a)+x) 0.0
+    (* Poisson likelihood *)
+    fun ll(y,mu) = ~mu+y*ln(mu)-ln_factorial(floor y)
+    fun negll x y beta = sumi (fn (i,yi) => ~(ll(yi,exp(sub(beta,0)+sub(beta,1)*sub(x,i))))) y
+    fun deriv x y beta =
+	let val (a,b) = (sub(beta,0), sub(beta,1))
+	in
+	    fromList [sumi (fn (i,yi) => exp(a+b*sub(x,i))-yi) y,
+		      sumi (fn (i,yi) => sub(x,i)*exp(a+b*sub(x,i))-sub(x,i)*yi) y]
+	end
+    end
+    (* data *)
+    val x = Array.fromList [0.0, 1.0]
+    val y = Array.fromList [100.0, 150.0]
+    val fit = Bfgs.vmmin_default(Array.fromList [0.0,0.0], negll x y, deriv x y)
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+# # # # # # # # # # # # # # # # # # # # # val deriv = fn: real array -> real array -> real array -> real array
+val fit =
+   {b = fromList[4.605169683, 0.4054642382], fail = false, fmin =
+    6.647168692, fncount = 48, grcount = 15}: Bfgs.vmminT
+val ll = fn: real * real -> real
+val ln_factorial = fn: int -> real
+val negll = fn: real array -> real array -> real array -> real
+val sumi = fn: (int * 'a -> real) -> 'a array -> real
+val x = fromList[0.0, 1.0]: real array
+val y = fromList[100.0, 150.0]: real array
+val it = "stdIn": string
+#+end_example
+
+
+We could also have used finite differences for the gradient and the hessian:
+
+#+BEGIN_SRC sml :exports both :results verbatim
+  (* finite differences *)
+  local
+      open Array
+  in
+  fun fdgradient f eps x =
+      let
+	  val n = length x
+	  fun delta(x, i, eps) = tabulate(n, fn j => sub(x,j) + (if i=j then eps else 0.0))
+      in
+	  tabulate(n, fn i => (f(delta(x,i,eps)) - f(delta(x,i,~eps))) / 2.0 / eps)
+      end
+  fun fdhessian grad eps beta =
+      let
+	  val n = length beta
+	  fun delta(beta, i, eps) = tabulate(n, fn (j) => sub(beta,j) + (if i=j then eps else 0.0))
+	  val lol = List.tabulate(n, fn i =>
+					let val upper = grad(delta(beta,i,eps))
+					    val lower = grad(delta(beta,i,~eps))
+					in
+					    List.tabulate(n, fn i => (sub(upper,i)-sub(lower,i))/2.0/eps)
+					end)
+      in
+	  Array2.fromList lol
+      end
+  end
+  fun deriv x y = fdgradient (negll x y) 1.0e~5
+  val fit = Bfgs.vmmin_default(Array.fromList [0.0,0.0], negll x y, deriv x y)
+  val hessian = fdhessian (deriv x y) 1.0e~5 (#b(fit))
+#+END_SRC
+
+#+RESULTS:
+#+begin_example
+# # # # # # # # # # # # # # # # # # # # # # # # # # # val deriv = fn: real array -> real array -> real array -> real array
+val fdgradient = fn: (real array -> real) -> real -> real array -> real array
+val fdhessian = fn:
+   (real array -> real array) -> real -> real array -> real Array2.array
+val fit =
+   {b = fromList[4.605169683, 0.4054642382], fail = false, fmin =
+    6.647168692, fncount = 48, grcount = 15}: Bfgs.vmminT
+val hessian =
+   fromList[[249.9990615, 149.9995506], [149.9995506, 149.9992663]]:
+   real Array2.array
+val it = "stdIn": string
+#+end_example
+
+We can invert the hessian to get the variance-covariance matrix and the standard errors for the coefficients:
+
+#+BEGIN_SRC sml :exports both :results verbatim
+  fun inv2x2 m =
+      let open Array2
+	  val (a,b,c,d) = (sub(m,0,0),sub(m,0,1),sub(m,1,0),sub(m,1,1))
+	  val det=a*d-b*c
+      in
+	  fromList [[d/det,~b/det],[~c/det,a/det]]
+      end
+  val vcov = inv2x2 hessian
+  val se = Array.tabulate(2, fn i => Math.sqrt(Array2.sub(vcov,i,i)))
+#+end_src
+
+#+RESULTS:
+: # # # # # # # # val inv2x2 = fn: real Array2.array -> real Array2.array
+: val se = fromList[0.1000003867, 0.1291000174]: real array
+: val vcov =
+:    fromList[[0.01000007733, ~0.01000009628], [~0.01000009628, 0.0166668145]]:
+:    real Array2.array
+: val it = "stdIn": string
+
+
+The same data can be modelled using =R= using iterative re-weighted least squares:
+
+#+BEGIN_SRC R :session *R* :exports both :results output
+  summary(glm(y~x,data=data.frame(y=c(100,150),x=0:1),family=poisson))
+#+end_src
+
+#+RESULTS:
+#+begin_example
+
+Call:
+glm(formula = y ~ x, family = poisson, data = data.frame(y = c(100, 
+    150), x = 0:1))
+
+Deviance Residuals: 
+[1]  0  0
+
+Coefficients:
+            Estimate Std. Error z value Pr(>|z|)    
+(Intercept)   4.6052     0.1000  46.052  < 2e-16 ***
+x             0.4055     0.1291   3.141  0.00169 ** 
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+(Dispersion parameter for poisson family taken to be 1)
+
+    Null deviance: 1.0068e+01  on 1  degrees of freedom
+Residual deviance: 1.4655e-14  on 0  degrees of freedom
+AIC: 17.294
+
+Number of Fisher Scoring iterations: 2
+#+end_example
+
+As a final example, we can optimise the standard Rosenbrock function, which is included in the =Bfgs= structure:
+
+#+BEGIN_SRC sml :exports both :results verbatim
+val fit = Bfgs.vmmin_default(Array.fromList [~1.0, 1.0], Bfgs.rosenbrock, Bfgs.rosenbrock1)
+#+end_src
+
+#+RESULTS:
+: val fit =
+:    {b = fromList[0.9999999977, 0.9999999947], fail = false, fmin =
+:     5.769266837E~17, fncount = 117, grcount = 51}: Bfgs.vmminT
+: val it = "stdIn": string
+
+The =Makefile= also provides to optimise the standard Rosenbrock function using =C=:
 
 #+BEGIN_SRC sh :results verbatim :exports both
 make c
 #+END_SRC
 
 #+RESULTS:
-: gcc `pkg-config --cflags libRmath` vmmin.c -lRmath
+: gcc `pkg-config --cflags libRmath` vmmin.c `pkg-config --libs libRmath`
 : ./a.out
 : Rosenbrock test:
 : f = 0.000000000000000
