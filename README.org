@@ -126,19 +126,13 @@ val it = "stdIn": string
 We could also have used finite differences for the gradient and the hessian:
 
 #+BEGIN_SRC sml :exports both :results verbatim
-  (* finite differences *)
-  local
-      open Array
-      open Bfgs
-  in
-  fun deriv x y = fdgradient (negll x y) 1.0e~5
-  val fit = vmmin_default(Array.fromList [0.0,0.0], negll x y, deriv x y)
-  val hessian = fdhessian (deriv x y) 1.0e~5 (#b(fit))
-  end
+  val deriv = Bfgs.fdgradient (negll x y) 1.0e~5
+  val fit = Bfgs.vmmin_default(Array.fromList [0.0,0.0], negll x y, deriv)
+  val hessian = Bfgs.fdhessian deriv 1.0e~5 (#b(fit))
 #+END_SRC
 
 #+RESULTS:
-: # # # # # # # # val deriv = fn: real array -> real array -> real array -> real array
+: # # val deriv = fn: real array -> real array
 : val fit =
 :    {b = fromList[4.605169683, 0.4054642382], fail = false, fmin =
 :     6.647168692, fncount = 48, grcount = 15}: Bfgs.vmminT
@@ -158,7 +152,7 @@ We can invert the hessian to get the variance-covariance matrix and the standard
 	  fromList [[d/det,~b/det],[~c/det,a/det]]
       end
   val vcov = inv2x2 hessian
-  val se = Array.tabulate(2, fn i => Math.sqrt(Array2.sub(vcov,i,i)))
+  val se = Array.tabulate(Array2.nRows vcov, fn i => Math.sqrt(Array2.sub(vcov,i,i)))
 #+end_src
 
 #+RESULTS:
@@ -170,7 +164,7 @@ We can invert the hessian to get the variance-covariance matrix and the standard
 : val it = "stdIn": string
 
 
-The same data can be modelled using =R= using iterative re-weighted least squares:
+The same data can be modelled in =R= using iterative re-weighted least squares:
 
 #+BEGIN_SRC R :session *R* :exports both :results output
   summary(glm(y~x,data=data.frame(y=c(100,150),x=0:1),family=poisson))
@@ -202,7 +196,7 @@ AIC: 17.294
 Number of Fisher Scoring iterations: 2
 #+end_example
 
-As a final example, we can optimise the standard Rosenbrock function, which is included in the =Bfgs= structure:
+As a final example, we can optimise the standard Rosenbrock function and its gradient, which are included in the =Bfgs= structure:
 
 #+BEGIN_SRC sml :exports both :results verbatim
 val fit = Bfgs.vmmin_default(Array.fromList [~1.0, 1.0], Bfgs.rosenbrock, Bfgs.rosenbrock1)
@@ -214,7 +208,7 @@ val fit = Bfgs.vmmin_default(Array.fromList [~1.0, 1.0], Bfgs.rosenbrock, Bfgs.r
 :     5.769266837E~17, fncount = 117, grcount = 51}: Bfgs.vmminT
 : val it = "stdIn": string
 
-The =Makefile= also provides a test to optimise the Rosenbrock function using =C=:
+The =Makefile= provides a test to optimise the Rosenbrock function using =C=:
 
 #+BEGIN_SRC sh :results verbatim :exports both
 make c
